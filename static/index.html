@@ -1,0 +1,1201 @@
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>News script</title>
+    <!-- Load d3.js -->
+    <script src="https://d3js.org/d3.v4.js"></script>
+    <script src="https://d3js.org/d3.v5.min.js"></script>
+
+    <!-- Load d3-cloud -->
+    <script src="https://cdn.jsdelivr.net/gh/holtzy/D3-graph-gallery@master/LIB/d3.layout.cloud.js"></script>
+    <script>
+    
+        //API calls
+        function loadJSON(request_info,update,search)
+        {
+            let myobject = ""      
+            let web_page = ""
+            //this get_source only for initiallize
+            if (request_info[1] == "cnn" || request_info[2] == "fox-news" || request_info[0] == "top_headlines" || request_info[3] == "get_source") 
+            {    //http://127.0.0.1:5000/test
+                web_page = "https://newssscript.wl.r.appspot.com/test" ;
+            }  
+            else if (search.length > 0)
+            {
+                //http://127.0.0.1:5000/search
+                web_page = "https://newssscript.wl.r.appspot.com/search" ;
+            }    
+            let xmlhttp = new XMLHttpRequest();
+        
+            function loop(i,length)
+            {
+                if (i >= length)
+                {
+                    return;
+                }
+                xmlhttp.onreadystatechange = function () 
+                {
+                    if(this.readyState == 4 && this.status == 200)
+                    {   
+                        let jsonObj = xmlhttp.responseText;
+                        let myobject = JSON.parse(jsonObj);    
+                        generateHOME(myobject,request_info[i],update,search);  
+                        loop(i + 1 , length);       //go next request
+                    }
+                };
+                if (update == 1 || request_info[0] == "get_source")
+                {
+                    // used both GET & POST method
+                    if (request_info=="get_source")
+                    {
+                        console.log(request_info);
+                        //http://127.0.0.1:5000/api/getsource/all
+                        xmlhttp.open("GET","https://newssscript.wl.r.appspot.com/api/getsource/all",true); //all source
+                    }
+                    else
+                    {
+                        //http://127.0.0.1:5000/api/getsource/
+                        xmlhttp.open("GET","https://newssscript.wl.r.appspot.com/api/getsource/"+ request_info[0],true);
+                    }
+                    xmlhttp.send();
+                }
+                else
+                {
+                    xmlhttp.open("POST",web_page,true);
+                    if(search.length > 0)
+                    {
+                        xmlhttp.send(search);
+                    }
+                    else
+                    {
+                        xmlhttp.send(request_info[i]);
+                    }
+                }
+            }
+            loop(0, request_info.length);
+        }
+
+        function init()
+        {
+            // init all the module
+            let stack = ["top_headlines","cnn","fox-news","get_source","word_cloud"];
+            loadJSON(stack,0,[]);
+            function setEvent()
+            {
+                let target = document.getElementsByClassName("second_card");
+                for (i=0;i<target.length;i++)
+                {
+                    target[i].addEventListener("click",stopBubbling,false);
+                }
+                target = document.getElementsByClassName("cross_sign");
+                for (i=0;i<target.length;i++)
+                {
+                    target[i].addEventListener("click",stopBubbling2,false);
+                }
+            }
+            setEvent();
+            Loop_slides();
+        }
+        // Delete redundant source options while reset
+        function update_input_source()
+        {
+            let cate = document.getElementsByClassName("Category")[0].value;  
+            loadJSON([cate],1,[]);
+        }
+        function do_search()
+        {
+            // 1 2 3 5 element
+            let para = document.getElementsByClassName("search_input");
+            let temp = [];
+            if (para[0].value == '')
+            {
+                alert("KeyWord can not be empty");
+                return
+            }
+            if(!time_check())
+            {
+                return;
+            }
+
+            temp.push(para[0].value);   //keyword
+            temp.push(para[1].value);   //from
+            temp.push(para[2].value);   //to
+            temp.push(para[4].value);   //source
+            loadJSON([1],0,temp);       //[1] ensure do once
+        }
+    
+        // generate UI
+        function generateHOME(myobj,request_info,update,search)
+        {
+            if(request_info == "word_cloud")
+            {   
+                let myWords = myobj;
+                console.log(myWords);
+                var layout = d3.layout.cloud()
+                    .size([320, 290])
+                    .words(myWords.map(function(d) {
+                    return {text: d[0], size: d[1] * 5 + 11, test: "haha"};
+                    }))
+                    .padding(2)
+                    .rotate(function() { return ~~(Math.random() * 2) * 90; })
+                    .font("Impact")
+                    .fontSize(function(d) { return d.size; })
+                    .on("end", draw);
+
+                layout.start();
+
+                function draw(words) {
+                    d3.select("#my_dataviz").append("svg")
+                        .attr("width", layout.size()[0])
+                        .attr("height", layout.size()[1])
+                    .append("g")
+                        .attr("transform", "translate(" + layout.size()[0] / 2 + "," + layout.size()[1] / 2 + ")")
+                    .selectAll("text")
+                        .data(words)
+                    .enter().append("text")
+                        .style("font-size", function(d) { return d.size + "px"; })
+                        .style("font-family", "Impact")
+                        .attr("text-anchor", "middle")
+                        .attr("transform", function(d) {
+                            return "translate(" + [d.x, d.y] + ")rotate(" + d.rotate + ")";
+                        })
+                    .text(function(d) { return d.text; });
+                }
+                return
+            }
+            console.log(myobj);
+            if (search.length > 0 && myobj.articles.length == 0)
+            {
+                document.getElementsByClassName("no_result")[0].style.display = "block";
+                SecondPage();
+                return
+            }
+            
+            
+            //Search function
+            if (search.length > 0 && myobj.articles.length > 0)
+            {
+                // dont show "no result" if there have results
+                clean_all_history();
+                document.getElementsByClassName("no_result")[0].style.display = "none";
+                let articles = myobj.articles;
+                let card_stack = document.getElementsByClassName("second_card");
+                let time = Math.min(myobj.articles.length,card_stack.length);
+                
+                // manipulate data to each card
+                for(i=0;i<time;i++)
+                {
+                    card_stack[i].style.display = "block";
+                    let mystr = '';
+                    card_stack[i].children[0].children[0].setAttribute("src",articles[i].urlToImage);
+                    contain = card_stack[i].children[1].children;
+                    contain[0].innerHTML = articles[i].title;
+                    contain[1].innerHTML = "<b>Author: </b>" + articles[i].author;
+                    contain[2].innerHTML = "<b>Source: </b>" + articles[i].source.name;
+                    let cur_time = articles[i].publishedAt.substring(0,10);
+                    contain[3].innerHTML = "<b>Date: </b>" + cur_time.substring(5,7) + '/' + cur_time.substring(8,10) + '/' + cur_time.substring(0,4);
+                    contain[4].setAttribute("value",articles[i].description);
+                    // Truncate if length is gt than 50 CH
+                    if (articles[i].description.length > 50)
+                    {
+                        contain[4].innerHTML = articles[i].description.replace(/^(.{50}[^\s]*).*/, "$1") + '...';//substring(0,70) + '...';
+                    }
+                    else
+                    {
+                        contain[4].innerHTML = articles[i].description;
+                    }
+                    contain[5].value = articles[i].url;
+                    contain[5].style.cursor = "pointer";
+                    contain[5].setAttribute("href",articles[i].url);
+                }
+                Check_3rd_div();
+                // don't display empty box and show more button
+                if (myobj.articles.length < 10)
+                {
+                    if (myobj.articles.length <= 5)
+                    {
+                        document.getElementsByClassName("btn-showmore")[0].style.display = "none";
+                    }
+                    //need check again when we click show more
+                    for(i=myobj.articles.length;i<card_stack.length;i++)
+                    {
+                        card_stack[i].style.display = "none";
+                    }
+                }
+                //recover previous disabled box
+                //for(i=0;i<10;i++)
+                //{
+                //    card_stack[i].style.display = "block";
+                //}
+                return
+            }
+
+            // update source options
+            if (update == 1 || request_info == "get_source")
+            {
+                let articles = myobj.sources;
+                let card_stack = document.getElementsByClassName("Source_input")[0].children;
+                let Remove = document.getElementsByClassName("Source_input")[0];
+                let Source_option_id = [];
+                let Source_option_name = [];
+                for (i=0;i < articles.length;i++)
+                {
+                    Source_option_id.push(articles[i].id);
+                    Source_option_name.push(articles[i].name);
+                }
+                while (card_stack.length < 11)
+                {
+                    let temp = document.createElement("option");
+                    Remove.appendChild(temp);
+                }
+
+                //dynamic change the numerber of options
+                if (Source_option_id.length < 10)
+                {
+                    let times = 0;
+                    if (Source_option_id.length < 1)
+                    {
+                        times = 0;
+                    }
+                    else
+                    {
+                        times = Source_option_id.length;
+                    }
+                    for (i = card_stack.length; i > times; i--)
+                    {
+                        Remove.remove(i);
+                    }
+                }
+                for (i=1;i<card_stack.length;i++)
+                {
+                    card_stack[i].value = Source_option_id[i-1];
+                    card_stack[i].innerHTML = Source_option_name[i-1];
+                }
+                return
+            }
+            articles = myobj.articles;
+            if (request_info == "top_headlines")
+            {
+                card_stack = document.getElementsByClassName("Top_left_container")[0].children;
+                times = Math.min(myobj.articles.length,5);
+                for(i = 0; i < times; i++)
+                {
+                    cur_url = articles[i].url;
+                    card_stack[i].setAttribute("onclick","user_click(this)");       
+                    card_stack[i].setAttribute("href",articles[i].url);  
+                    card_stack[i].children[0].setAttribute("src",articles[i].urlToImage);
+                    card_stack[i].children[1].children[0].innerHTML = articles[i].title;
+                    card_stack[i].children[1].children[1].innerHTML = articles[i].description;
+                }
+                return
+            }
+            card_stack = document.getElementsByClassName("card");
+            var i = 0;
+            
+            if (request_info == 'cnn')
+            { 
+                i = 0;
+            }
+            else if (request_info == 'fox-news')
+            {
+                i = 4;
+            }
+            stop = i + 4;
+            var start = i;
+            var max_height = 0;
+            for (; i < stop; i++)
+            {
+                cur_url = articles[i].url;
+                card_stack[i].setAttribute("onclick","user_click(this)");       //打开的网页不动态
+                card_stack[i].setAttribute("href",articles[i].url);     //this for later click
+                image = card_stack[i].children[0];
+                image.setAttribute("src",articles[i].urlToImage);
+                contain = card_stack[i].children[1];
+                cur_title = contain.children[0];
+                cur_des = contain.children[1];
+                cur_title.innerHTML = articles[i].title;
+                cur_des.innerHTML = articles[i].description;
+                max_height = Math.max(max_height,card_stack[i].clientHeight);
+            }
+            for (start; start < stop; start++)
+            {
+                card_stack[start].style.height = max_height + 10 ;
+            }
+        }
+        function user_click(what)
+        {
+            window.open(what.getAttribute("href"));
+        }
+        function FirstPage()
+        {
+            // don't close opened tap due to TA required
+            set_all(document.getElementsByClassName("fp"),"block");
+            document.getElementsByClassName("fp")[0].style.display = "inline-block";
+            set_all(document.getElementsByClassName("sp"),"none");
+            set_all(document.getElementsByClassName("tp"),"none");
+            set_all(document.getElementsByClassName("fop"),"none"); 
+            document.getElementById("set_color2").classList.remove("search_button1");
+            document.getElementById("set_color2").classList.add("search_button2");
+            document.getElementById("set_color1").classList.remove("search_button2");
+            document.getElementById("set_color1").classList.add("search_button1");
+        }
+
+        //init search time range
+        function initial_time()
+        {
+            let today = new Date();
+            let year = today.getFullYear();
+            let month = ("0" + (today.getMonth() + 1)).slice(-2); 
+            let date = ("0" + today.getDate()).slice(-2); 
+            let last_month = ("0" + (today.getMonth() )).slice(-2); 
+            document.getElementsByClassName("date_input")[1].value = year + '-' + month + '-' +  date ;
+            document.getElementsByClassName("date_input")[0].setAttribute("min",year + '-' + (last_month) + '-'+ date);
+            document.getElementsByClassName("date_input")[0].setAttribute("max",year + '-' + month + '-' + date);
+            document.getElementsByClassName("date_input")[1].setAttribute("min",year + '-' + (last_month) + '-' + date);
+            document.getElementsByClassName("date_input")[1].setAttribute("max",year + '-' + month + '-' + date);
+
+            let pastDate = today.getDate() - 7;
+            today.setDate(pastDate);
+            month = ("0" + (today.getMonth() + 1)).slice(-2); 
+            date = ("0" + today.getDate()).slice(-2); 
+            document.getElementsByClassName("date_input")[0].value = year + '-' + month + '-' +  date ;
+        }
+        // prevent invalid time input
+        function time_check()
+        {
+            let today = new Date();
+            let year = today.getFullYear();
+            let month = ("0" + (today.getMonth() + 1)).slice(-2); 
+            let date = ("0" + today.getDate()).slice(-2); 
+            let last_month = ("0" + (today.getMonth() )).slice(-2); 
+            let current_time = year + '-' + month + '-' + date;
+            let min_time = year + '-' + (last_month) + '-'+ date;
+            target1 = document.getElementsByClassName("date_input")[0];
+            target2 = document.getElementsByClassName("date_input")[1];
+            //if(target1.value > target1.getAttribute("max") || target1.value < target1.getAttribute("min") 
+            //|| target2.value < target2.getAttribute("min") || target2.value < target2.getAttribute("min")
+            //|| target1.value > target2.value)
+            if(target1.value > current_time || target2.value > current_time)
+            {
+                alert("We can not search for future !");
+                return false;
+            }
+            else if(target1.value > target2.value)
+            {
+                alert("Invalid Time Input!");
+                return false;
+            }
+            else if(target1.value < min_time || target2.value < min_time)
+            {
+                alert("Sorry, current API account only support for recent 30days");
+                return false;
+            }
+            return true;
+        }   
+        // Reset all the input box, 
+        function reset()
+        {
+            initial_time();
+            document.getElementsByClassName("search_input")[0].value = "";
+            document.getElementsByClassName("search_input")[3].value = "all";
+            document.getElementsByClassName("search_input")[4].value = "all";
+            set_all(document.getElementsByClassName("tp"),"none");
+            set_all(document.getElementsByClassName("fop"),"none");
+            set_all(document.getElementsByClassName("btn-showmore"),"none");
+            update_input_source();
+        }
+
+        // Initial second page 
+        function SecondPage()
+        {
+            set_all(document.getElementsByClassName("fp"),"none");
+            set_all(document.getElementsByClassName("sp"),"block");
+            document.getElementsByClassName("sp")[0].style.display = "block";
+            set_all(document.getElementsByClassName("tp"),"none");
+            set_all(document.getElementsByClassName("fop"),"none");
+            set_all(document.getElementsByClassName("btn-showmore"),"none");
+            initial_time();
+            document.getElementById("set_color1").classList.remove("search_button1");
+            document.getElementById("set_color1").classList.add("search_button2");
+            document.getElementById("set_color2").classList.remove("search_button2");
+            document.getElementById("set_color2").classList.add("search_button1");
+        }
+
+        // set all list elements display attribute
+        function set_all(list,value)
+        {
+            for(i=0;i<list.length;i++)
+            {
+                list[i].style.display = value;
+            }
+        }
+
+
+        function Check_3rd_div()
+        {
+            set_all(document.getElementsByClassName("tp"),"block");
+            set_all(document.getElementsByClassName("fop"),"none");
+        }
+        function Open_4th_div()
+        {
+            set_all(document.getElementsByClassName("fop"),"block");
+            //ensure empty not show
+            for(i=0;i<document.getElementsByClassName("second_card").length;i++)
+            {
+                if(!document.getElementsByClassName("second_card")[i].children[1].children[0].innerHTML) 
+                {
+                    document.getElementsByClassName("second_card")[i].style.display = "none";
+                }
+            }
+
+            set_all(document.getElementsByClassName("btn-showmore"),"none");
+        }
+        function clean_all_history()
+        {
+            for(i=0;i<10;i++)
+            {
+                let cleaner = document.getElementsByClassName("second_card");
+                cleaner[i].children[2].style.display = "none"; //cross sign
+                //cleaner[i].style.cursor = "pointer";
+                cleaner[i].children[0].style.backgroundImage = "";
+                let contain = cleaner[i].children[1].children;
+                contain[0].innerHTML = "";  //title
+                contain[0].style.cursor = "pointer";
+                contain[1].innerHTML = "";  //author
+                contain[1].style.display = "none";
+                contain[2].innerHTML = "";  //source
+                contain[2].style.display = "none";
+                let cur_time = "";
+                contain[3].innerHTML = "";  //date
+                contain[3].style.display = "none";
+                contain[4].setAttribute("value","");    //description
+                contain[4].style.cursor = "pointer";
+                contain[4].innerHTML = "";
+                contain[5].value = "";
+                contain[5].style.cursor = "pointer";    // Orginal link
+                //cleaner[i].style.height = "150px";      //keep close
+                contain[5].style.display = "none";
+                contain[5].setAttribute("href","");
+                cleaner[i].style.display = "none";
+                cleaner[i].style.cursor = "pointer";
+            }
+        }
+
+        // User click card, show full info
+        function spam_box(what)
+        {
+            let Obj = what.children[1];
+            for (i = 0; i < 5;i++)
+            {
+                Obj.children[i].style.cursor = "auto";
+            }
+            Obj.children[1].style.display = 'block';    //author
+            Obj.children[2].style.display = 'block';    //source
+            Obj.children[3].style.display = 'block';    //date
+            Obj.children[4].innerHTML = Obj.children[4].getAttribute("value"); //description
+            Obj.children[5].style.display = 'block';    //link
+            what.style.cursor = "context-menu";        //delete cursor
+            what.children[2].style.display = "inline-block";
+            return;
+        }
+
+        // collapse card info
+        function shrink_box(what)
+        {
+            let Obj = what.parentElement.children[1];
+            for (i = 0; i < 5;i++)
+            {
+                Obj.children[i].style.cursor = "pointer";
+            }
+            Obj.children[1].style.display = 'none';    //author
+            Obj.children[2].style.display = 'none';    //source
+            Obj.children[3].style.display = 'none';    //date
+            if (Obj.children[4].getAttribute("value").length > 90)
+            {
+                Obj.children[4].innerHTML = Obj.children[4].getAttribute("value").substring(0,90) + '...';
+            }
+            else
+            {
+                Obj.children[4].innerHTML = Obj.children[4].getAttribute("value");
+            }
+            Obj.children[5].style.display = 'none';    //link
+            what.parentNode.style.cursor = "pointer";       
+            what.parentNode.children[2].style.display = "none";
+            return;
+        }
+
+        // expand card and don't cycle
+        function stopBubbling(evt)
+        {   
+            spam_box(this);
+            evt.stopPropagation();
+        }
+
+        // shrink box and don't cycle
+        function stopBubbling2(evt)
+        {   
+            shrink_box(this);
+            evt.stopPropagation();
+        }
+
+        
+        let s_index = 0;
+        //Loop_slides();
+        function Loop_slides()
+        {
+            let slides = document.getElementsByClassName("slides");
+            for(i=0;i<slides.length;i++)
+            {
+                slides[i].style.display = "none";
+            }
+            if(s_index>=slides.length)
+            {
+                s_index = 0;
+            }
+            slides[s_index].style.display = "block";
+            s_index++;
+            setTimeout(Loop_slides, 5000);
+        }
+    </script>
+   
+    <style>
+        body
+        {
+            text-align: center;
+        }
+        hr.horizontal
+        {
+            border-top: 1px dotted black;
+            border-bottom: 0.5px solid;
+            width: 880px;
+        }
+        .whole_body
+        {
+            float: left;
+            margin-left: 32%;
+        }
+        .btn-group
+        {
+            top: 50px;
+            position:fixed;
+            display: inline-block;
+            left: 21%;
+        }
+        .search_button
+        {
+            font-size: 15px;
+            height: 45px;
+            border: none;
+            width: 130px;
+            display: block;
+        }
+        #set_color1
+        {
+            border-top-right-radius:10px;
+            border-top-left-radius:10px;
+        }
+        .search_button1
+        {
+            background-color:#6F706F;
+            color: white;
+        }
+        #set_color2
+        {
+            border-bottom-right-radius:10px;
+            border-bottom-left-radius:10px;
+        }
+        .search_button2
+        {
+            color: black;
+        }
+        .search_button:hover
+        {
+            background-color: #40C940;
+            color: white;
+        }
+        .Top_box
+        {
+            margin: 20px auto 0;
+            width: 900px;
+        }
+        .Top_left_container
+        {
+            width: 460px;
+            height: 290px;
+            cursor:pointer;
+        }
+        .slides
+        {
+            position: relative;
+            width: 460px;
+            height: 290px;
+        }
+        .top_headline_img
+        {
+            width: 460px;
+            height: 290px;
+        }
+        #my_dataviz
+        {
+            background-color: #F0F0F0;
+            margin-left: 30px;
+        }
+        .top_headline_shadow
+        {
+            position: absolute;
+            width: auto;
+            height: auto;
+            bottom: 0;
+            color: white;
+            background-color: rgba(140, 132, 108, 0.4);
+        }
+        .top_headline_title
+        {
+            margin: 0;
+            font-size: 25px;
+        }
+        .top_headline_description
+        {
+            margin: 0;
+            font-size: 18px;
+        }
+        .title
+        {
+            font-size: 19px;
+        }
+        .description
+        {
+            font-size: 14px;
+        }
+        .card
+        {
+            text-align: center;
+            vertical-align: text-top;
+            width: 205px;
+            height: auto;
+            cursor:pointer;
+            margin: 10px 6px 50px;
+            background-color: #F5F5F5;
+            display: inline-block;
+            box-shadow: 3px 3px #A9A9A9;
+            border-radius: 8px;
+        }
+        .KeyWord
+        {
+            font-size: 17px;
+            margin: 15px 17px 15px;
+        }
+        .search_input
+        {
+            font-size: 16px;
+            width: 140px;
+            height: 24px;
+            text-align: center;
+        }
+        .btn_level3
+        {
+            width:120px;
+            height:28px;
+            font-size: 16px;
+            background-color: #F0F0ED;
+            border: none;
+        }
+        .btn_level3:hover
+        {
+            background-color: #40C940;
+            color: white;
+        }
+        .fimg
+        {
+            width: 205px;
+            height: 121px;
+            border-radius: 8px;
+        }
+        .FOX_box
+        {
+            margin-bottom: 200px;
+        }
+        .Top_box .Top_left_container 
+        {
+            text-align: center;
+        }
+        .level1
+        {
+            margin: 10px 10px;
+            display: inline-block;
+        }
+        .level2
+        {
+            margin: 0 10px;
+            display: inline-block;
+        }
+        .level3
+        {
+            margin: 17px 15px 13px;
+            display: inline-block;
+
+        }
+        .search_form
+        {
+            height: 200px;
+            width: 820px;
+            background-color: #F6F6F6;
+        }
+        .sp
+        {
+            display: none;
+            margin: 40px auto 40px;
+            border-radius: 10px;
+        }
+        .tp
+        {
+            display: none;
+        }
+        .fop
+        {
+            display: none;
+        }
+        .no_result
+        {
+            display: none;
+        }
+        .second_card
+        {
+            margin: 15px auto;
+            width: 800px;
+            height: auto;
+            cursor: pointer;
+            background-color: #F6F6F6;
+            box-shadow: 2px 1.8px #A9A9A9;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .second_card:hover
+        {
+            box-shadow: 10px 10px 5px grey;
+        }
+        .square_img
+        {
+            text-align: left;
+            width: 110px;
+            height: 100px;
+            margin-left: 20px;
+        }
+        .single_box
+        {
+            vertical-align: top;
+            height: auto;
+            width: 630px;
+            margin: 10px 0 0 10px;
+            display: inline-block;
+        }
+        .lp
+        {
+            margin: 1px 5px;
+            display: none;
+        }
+        .lp_box
+        {
+            width: 100px;
+            height: 100px;
+            margin: 25px 10px;  
+            display: inline-block;
+            background-size: cover;
+            background-position: center;
+            overflow: hidden;
+        }
+        .picture
+        {
+            transform: translate(-50%);
+            position: relative;
+            height: 100%;
+            left: 50%;
+        }
+        .force_left_up
+        {
+            text-align: left;
+            margin: 4px auto;
+            font-size: 16px;
+        }
+        .force_left_up_title
+        {
+            text-align: left;
+            margin: 4px auto;
+            font-size: 20px;
+        }
+        .cross_sign
+        {
+            display: none;
+            vertical-align: top;
+            padding-top: 10px;
+            padding-right:10px;
+            cursor: pointer;
+        }
+        .last_link
+        {
+            width: 140px;
+            float: left;
+        }
+        .inline
+        {
+            display: inline-block;
+        }
+        .btn
+        {
+            margin: 10px auto 50px;
+            width: 140px;
+            height: 35px;
+            font-size: 17px;
+            background-color: #F6F6F6;
+            border: none;
+        }
+        .btn:hover
+        {
+            background-color: #40C940;
+            color: white;
+        }
+    </style>
+    
+
+</head>
+
+<body onload=init()>
+    <!-- BUTTON --> 
+    
+        <div class="btn-group">
+            <button class="search_button search_button1" id="set_color1" onclick="FirstPage()" >Google News</button>
+            <button class="search_button search_button2" id="set_color2" onclick="SecondPage()">Search</button>
+        </div>
+    
+        <div class="whole_body">
+            <div class="Top_box fp inline">
+                <!-- Big headlines -->
+                <div class="Top_left_container inline">
+                    <div class="slides">
+                        <img class="top_headline_img" src=""></img>
+                        <div class="top_headline_shadow">
+                            <h4 class="top_headline_title"></h4>
+                            <p class="top_headline_description"></p>
+                        </div>
+                    </div>
+                    
+                    <div class="slides">
+                        <img class="top_headline_img" src=""></img>
+                        <div class="top_headline_shadow">
+                            <h4 class="top_headline_title"></h4>
+                            <p class="top_headline_description"></p>
+                        </div>
+                    </div>
+                    <div class="slides">
+                        <img class="top_headline_img" src=""></img>
+                        <div class="top_headline_shadow">
+                            <h4 class="top_headline_title"></h4>
+                            <p class="top_headline_description"></p>
+                        </div>
+                    </div>
+                    <div class="slides">
+                        <img class="top_headline_img" src=""></img>
+                        <div class="top_headline_shadow">
+                            <h4 class="top_headline_title"></h4>
+                            <p class="top_headline_description"></p>
+                        </div>
+                    </div>
+                    <div class="slides">
+                        <img class="top_headline_img" src=""></img>
+                        <div class="top_headline_shadow">
+                            <h4 class="top_headline_title"></h4>
+                            <p class="top_headline_description"></p>
+                        </div>
+                    </div>
+                    
+                
+                </div>
+                <!--  w3d -->
+                <div class="inline" id="my_dataviz"></div>
+            </div>
+            <!-- "CNN title" -->
+            <h1 class="fp">CNN</h1>
+            <hr class="horizontal fp">
+            <div class="CNN_box fp" cellspacing: "25">
+            
+                <div class="card" value="0">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                    
+                </div>
+
+                <div class="card" value="1">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                </div>
+
+                <div class="card" value="2">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                </div>
+
+                <div class="card" value="3">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                </div>
+            
+            </div>
+            <!-- "FOX title" -->
+            <h1 class="fp">Fox News</h1>
+            <hr class="horizontal fp">
+
+            <div class="FOX_box fp" cellspacing: "4px">
+            
+                <div class="card">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <img src="" class="fimg"></img>
+                    <div class="container">
+                        <h2 class="title"></h2>
+                        <p class="description"></p>
+                    </div>
+                </div>
+                
+
+
+
+            </div>
+            <!-- Search Form -->
+            
+            <div class="search_form sp no_show_first">
+                <div>
+                    <div class="level1"><p class="KeyWord">KeyWord</p></div>
+                    <div class="level1"><input type="text" class="search_input" required></input></div>
+                    <div class="level1"><p class="KeyWord">From</p></div>
+                    <div class="level1"><input type="date" class="date_input search_input" onchange="time_check()" required></input> </div>
+                    <div class="level1"><p class="KeyWord">To</p></div>
+                    <div class="level1"><input type="date" class="date_input search_input" onchange="time_check()" required></input> </div>
+                </div>
+                <div>
+                    <div class="level2"><p class="KeyWord">CateGory</p></div>
+                    <div class="level2">
+                        <select class="Category search_input" onchange="update_input_source()">
+                            <option value="all" selected>all</option>
+                            <option value="business">business</option>
+                            <option value="entertainment">entertainment</option>
+                            <option value="general">general</option>
+                            <option value="health">health</option>
+                            <option value="science">science</option>
+                            <option value="sports">sports</option>
+                            <option value="technology">technology</option>
+                        </select>
+                    </div>
+                    <div class="level2"><p class="KeyWord">Source</p></div>
+                    <div class="level2">
+                        <select class="Source_input search_input">
+                            <option value="all" selected class="SO">all</option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                            <option value="" class="SO"></option>
+                        </select>
+                    </div>
+                </div>
+                <div class="level3"><button class="btn_level3 " onclick="do_search()">Search</button></div>
+                <div class="level3"><button class="btn_level3 " onclick="reset()">Clear</button></div>
+
+            </div>
+
+            <h3 class="no_result">No Result</h3>
+
+
+
+            <!-- third page HTML   --> 
+            <div class="no_show_first tp">
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up "></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank" width="40px">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up "></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up "></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up"></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up"></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <button onclick="Open_4th_div()" class="tp btn-showmore btn">Show More</button>
+            </div>
+
+
+            <!-- 4th box -->
+            <div class="no_show_first fop">
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up"></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up"></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up"></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up"></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <div class="second_card " >
+                    <div class="lp_box">
+                        <img src="" class="picture"></img>
+                    </div>
+                    <div class="single_box">
+                        <h2 class="force_left_up_title"></h2>
+                        <p class="force_left_up lp"> <b>Author: </b></p>
+                        <p class="force_left_up lp"> <b>Source: </b></p>
+                        <p class="force_left_up lp"> <b>Date: </b></p>
+                        <p class="force_left_up"></p>
+                        <a href="" class="force_left_up lp last_link" onclick="" target="_blank">See Orginal Post</a>
+                    </div>
+                    <div class="cross_sign" >&#10006;</div>
+                </div>
+                <button onclick="Check_3rd_div()" class="fop btn" >Show Less</button>
+            </div>
+        </div>
+  
+</body>
+</html>
