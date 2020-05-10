@@ -21,3 +21,6 @@ Flask/Python
 - Count the frequency of words and remove stopwords in the backend and append it to the returning data from Google News, coded in pure Python (to prepare data D3 needs)
 - filter null values and return only 5 valid articles for home page 
 
+demo screenshot
+![home](https://github.com/xiaohai0313/News-Script/blob/master/page1.png)
+![search](https://github.com/xiaohai0313/News-Script/blob/master/page2.png)
